@@ -1,0 +1,25 @@
+services:
+  front:
+    image: luisgp863/repo-luis:front
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  api:
+    image: luisgp863/repo-luis:api
+    env_file: .env
+    depends_on:
+      stock:
+        condition: service_healthy
+    restart: unless-stopped
+
+  stock:
+    image: luisgp863/repo-luis:stock
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
