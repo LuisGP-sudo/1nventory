@@ -217,4 +217,4 @@ prod/     docker-compose.yml de production + .env.example
 
 - Front : Youssef
 - API : Arnaud
-- Stock, registry, reverse proxy, réseaux et compose de production : Luis
+- Stock: Luis
