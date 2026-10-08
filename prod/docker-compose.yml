@@ -1,15 +1,28 @@
 services:
   front:
     image: luisgp863/repo-luis:front
+    pull_policy: always
     ports:
       - "80:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
     depends_on:
       - api
     restart: unless-stopped
 
   api:
     image: luisgp863/repo-luis:api
+    pull_policy: always
     env_file: .env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
     depends_on:
       stock:
         condition: service_healthy
@@ -17,9 +30,11 @@ services:
 
   stock:
     image: luisgp863/repo-luis:stock
+    pull_policy: always
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
       interval: 10s
       timeout: 3s
       retries: 3
+      start_period: 10s
     restart: unless-stopped
