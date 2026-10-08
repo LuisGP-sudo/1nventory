@@ -10,10 +10,11 @@ services:
       - front
       - api
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80"]
       interval: 10s
       timeout: 3s
       retries: 3
+      start_period: 10s
     restart: unless-stopped
   front:
     image: luisgp863/repo-luis:front
@@ -21,7 +22,7 @@ services:
     networks:
       - frontnet
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:80"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80"]
       interval: 10s
       timeout: 3s
       retries: 3
