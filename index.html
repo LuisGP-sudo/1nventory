@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>1nventory</title>
+<style>
+  :root {
+    --bg: #eef1f4;
+    --panel: #ffffff;
+    --ink: #14202b;
+    --muted: #5b6b7a;
+    --line: #d5dce3;
+    --accent: #0b6e6e;
+    --accent-ink: #ffffff;
+    --danger: #a62d2d;
+    --ok-bg: #dff2e6;   --ok-ink: #17623a;
+    --wait-bg: #fdf0cf; --wait-ink: #7a5a00;
+    --ko-bg: #f8dcdc;   --ko-ink: #8a2323;
+    --idle-bg: #e3e8ed; --idle-ink: #3d4b59;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  header { background: var(--ink); color: #fff; }
+  .bar { max-width: 960px; margin: 0 auto; padding: 14px 20px; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .logo { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; }
+  .baseline { color: #aebccb; font-size: 14px; }
+  nav { max-width: 960px; margin: 0 auto; padding: 0 20px; display: flex; gap: 4px; }
+  nav button {
+    background: transparent; color: #aebccb; border: 0; padding: 10px 16px;
+    font: inherit; cursor: pointer; border-bottom: 3px solid transparent;
+  }
+  nav button[aria-selected="true"] { color: #fff; border-bottom-color: #5fd0c8; font-weight: 600; }
+  nav button:hover { color: #fff; }
+  :focus-visible { outline: 3px solid #5fd0c8; outline-offset: 2px; }
+  main { max-width: 960px; margin: 24px auto; padding: 0 20px 60px; }
+  section[hidden] { display: none; }
+  h2 { font-size: 18px; margin: 0 0 12px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 18px; margin-bottom: 20px; }
+  form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; align-items: end; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+  input, select {
+    font: inherit; color: var(--ink); padding: 8px 10px;
+    border: 1px solid var(--line); border-radius: 4px; background: #fff; min-width: 0;
+  }
+  input:disabled { background: var(--bg); color: var(--muted); }
+  button.primary, button.small {
+    font: inherit; cursor: pointer; border-radius: 4px; border: 1px solid var(--accent);
+    background: var(--accent); color: var(--accent-ink); padding: 8px 14px;
+  }
+  button.small { padding: 4px 10px; font-size: 13px; background: #fff; color: var(--accent); }
+  button.small.ghost { border-color: var(--line); color: var(--muted); }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  th { font-size: 13px; color: var(--muted); font-weight: 600; }
+  td.num { font-variant-numeric: tabular-nums; }
+  td input, td select { width: 100%; padding: 4px 8px; }
+  .actions { white-space: nowrap; display: flex; gap: 6px; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 13px; font-weight: 600; }
+  .pill.utilise, .pill.acceptee { background: var(--ok-bg); color: var(--ok-ink); }
+  .pill.range { background: var(--idle-bg); color: var(--idle-ink); }
+  .pill.en_attente { background: var(--wait-bg); color: var(--wait-ink); }
+  .pill.refusee { background: var(--ko-bg); color: var(--ko-ink); }
+  .empty { color: var(--muted); padding: 14px 4px; }
+  #message {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+    max-width: 90vw; padding: 10px 16px; border-radius: 4px; color: #fff;
+    background: var(--ink); display: none; z-index: 10;
+  }
+  #message.error { background: var(--danger); }
+  #message.show { display: block; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="bar">
+    <span class="logo">1nventory</span>
+    <span class="baseline">Parc informatique : postes, stock et demandes</span>
+  </div>
+  <nav role="tablist" aria-label="Sections">
+    <button role="tab" id="tab-devices" aria-selected="true"  aria-controls="view-devices">Postes</button>
+    <button role="tab" id="tab-requests" aria-selected="false" aria-controls="view-requests">Demandes</button>
+    <button role="tab" id="tab-stock"    aria-selected="false" aria-controls="view-stock">Stock</button>
+  </nav>
+</header>
+
+<main>
+  <!-- POSTES -->
+  <section id="view-devices" role="tabpanel" aria-labelledby="tab-devices">
+    <div class="panel">
+      <h2>Ajouter un poste</h2>
+      <form id="form-device">
+        <label>Modèle <input name="modele" required placeholder="Latitude 5420"></label>
+        <label>Marque <input name="marque" required placeholder="Dell"></label>
+        <label>Statut
+          <select name="statut">
+            <option value="range">Rangé</option>
+            <option value="utilise">Utilisé</option>
+          </select>
+        </label>
+        <label>Affectation <input name="affectation" placeholder="Nom de la personne"></label>
+        <button class="primary" type="submit">Ajouter le poste</button>
+      </form>
+    </div>
+    <div class="panel">
+      <h2>Postes</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Modèle</th><th>Marque</th><th>Affectation</th><th>Statut</th><th></th></tr></thead>
+          <tbody id="devices-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- DEMANDES -->
+  <section id="view-requests" role="tabpanel" aria-labelledby="tab-requests" hidden>
+    <div class="panel">
+      <h2>Nouvelle demande d'équipement</h2>
+      <form id="form-request">
+        <label>Demandeur <input name="demandeur" required placeholder="Alice"></label>
+        <label>Modèle souhaité <input name="modele" list="models" required placeholder="Latitude 5420"></label>
+        <datalist id="models"></datalist>
+        <button class="primary" type="submit">Envoyer la demande</button>
+      </form>
+    </div>
+    <div class="panel">
+      <h2>Demandes</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Demandeur</th><th>Modèle</th><th>État</th></tr></thead>
+          <tbody id="requests-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- STOCK -->
+  <section id="view-stock" role="tabpanel" aria-labelledby="tab-stock" hidden>
+    <div class="panel">
+      <h2>Stock par modèle</h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Modèle</th><th>Quantité</th></tr></thead>
+          <tbody id="stock-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="message" role="alert"></div>
+
+<script>
+  // Toutes les requêtes passent par le proxy nginx : /api/ -> http://api:5000
+  const API = '/api';
+
+  const LABELS = {
+    utilise: 'Utilisé', range: 'Rangé',
+    en_attente: 'En attente', acceptee: 'Acceptée', refusee: 'Refusée'
+  };
+
+  let devices = [];
+  let editingId = null;
+
+  /* ---------- Utilitaires ---------- */
+  function esc(v) {
+    return String(v ?? '').replace(/[&<>"']/g, c =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function pill(value) {
+    return `<span class="pill ${esc(value)}">${esc(LABELS[value] || value)}</span>`;
+  }
+
+  let messageTimer;
+  function notify(text, isError) {
+    const el = document.getElementById('message');
+    el.textContent = text;
+    el.className = 'show' + (isError ? ' error' : '');
+    clearTimeout(messageTimer);
+    messageTimer = setTimeout(() => { el.className = ''; }, 4000);
+  }
+
+  // Les erreurs de l'api ont toujours la forme {"erreur": "message"}
+  async function call(path, options = {}) {
+    const res = await fetch(API + path, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options
+    });
+    let data = null;
+    try { data = await res.json(); } catch (e) { /* corps vide ou non JSON */ }
+    if (!res.ok) throw new Error((data && data.erreur) || `Erreur ${res.status}`);
+    return data;
+  }
+
+  function emptyRow(cols, text) {
+    return `<tr><td class="empty" colspan="${cols}">${text}</td></tr>`;
+  }
+
+  /* ---------- Onglets ---------- */
+  const tabs = ['devices', 'requests', 'stock'];
+  function showTab(name) {
+    tabs.forEach(t => {
+      document.getElementById('view-' + t).hidden = (t !== name);
+      document.getElementById('tab-' + t).setAttribute('aria-selected', String(t === name));
+    });
+    if (name === 'devices') loadDevices();
+    if (name === 'requests') loadRequests();
+    if (name === 'stock') loadStock();
+  }
+  tabs.forEach(t => document.getElementById('tab-' + t).addEventListener('click', () => showTab(t)));
+
+  /* ---------- Postes ---------- */
+  async function loadDevices() {
+    try {
+      devices = await call('/devices');
+      renderDevices();
+    } catch (e) {
+      document.getElementById('devices-body').innerHTML = emptyRow(5, 'Impossible de charger les postes.');
+      notify(e.message, true);
+    }
+  }
+
+  function renderDevices() {
+    const body = document.getElementById('devices-body');
+    if (!devices.length) {
+      body.innerHTML = emptyRow(5, 'Aucun poste pour le moment. Ajoutez le premier avec le formulaire ci-dessus.');
+      return;
+    }
+    body.innerHTML = devices.map(d => {
+      if (d.id === editingId) {
+        return `<tr>
+          <td>${esc(d.modele)}</td>
+          <td>${esc(d.marque)}</td>
+          <td><input id="edit-affectation" value="${esc(d.affectation)}" aria-label="Affectation"></td>
+          <td>
+            <select id="edit-statut" aria-label="Statut">
+              <option value="range" ${d.statut === 'range' ? 'selected' : ''}>Rangé</option>
+              <option value="utilise" ${d.statut === 'utilise' ? 'selected' : ''}>Utilisé</option>
+            </select>
+          </td>
+          <td class="actions">
+            <button class="small" data-save="${d.id}">Enregistrer</button>
+            <button class="small ghost" data-cancel="1">Annuler</button>
+          </td>
+        </tr>`;
+      }
+      return `<tr>
+        <td>${esc(d.modele)}</td>
+        <td>${esc(d.marque)}</td>
+        <td>${d.affectation ? esc(d.affectation) : '<span class="empty">Non affecté</span>'}</td>
+        <td>${pill(d.statut)}</td>
+        <td class="actions"><button class="small" data-edit="${d.id}">Modifier</button></td>
+      </tr>`;
+    }).join('');
+
+    const statut = document.getElementById('edit-statut');
+    const aff = document.getElementById('edit-affectation');
+    if (statut && aff) {
+      const sync = () => { aff.disabled = (statut.value === 'range'); if (aff.disabled) aff.value = ''; };
+      statut.addEventListener('change', sync);
+      sync();
+    }
+  }
+
+  document.getElementById('devices-body').addEventListener('click', async ev => {
+    const btn = ev.target.closest('button');
+    if (!btn) return;
+    if (btn.dataset.edit) { editingId = Number(btn.dataset.edit); renderDevices(); }
+    if (btn.dataset.cancel) { editingId = null; renderDevices(); }
+    if (btn.dataset.save) {
+      const statut = document.getElementById('edit-statut').value;
+      const aff = document.getElementById('edit-affectation').value.trim();
+      // affectation vaut null si le poste est au statut "range"
+      const body = { affectation: (statut === 'range' || !aff) ? null : aff, statut };
+      try {
+        await call('/devices/' + btn.dataset.save, { method: 'PUT', body: JSON.stringify(body) });
+        editingId = null;
+        notify('Poste mis à jour');
+        loadDevices();
+      } catch (e) { notify(e.message, true); }
+    }
+  });
+
+  const formDevice = document.getElementById('form-device');
+  const statutSelect = formDevice.elements['statut'];
+  const affInput = formDevice.elements['affectation'];
+  function syncNewDevice() {
+    affInput.disabled = (statutSelect.value === 'range');
+    if (affInput.disabled) affInput.value = '';
+  }
+  statutSelect.addEventListener('change', syncNewDevice);
+  syncNewDevice();
+
+  formDevice.addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const f = ev.target.elements;
+    const statut = f['statut'].value;
+    const aff = f['affectation'].value.trim();
+    const body = {
+      modele: f['modele'].value.trim(),
+      marque: f['marque'].value.trim(),
+      affectation: (statut === 'range' || !aff) ? null : aff,
+      statut
+    };
+    try {
+      await call('/devices', { method: 'POST', body: JSON.stringify(body) });
+      ev.target.reset();
+      syncNewDevice();
+      notify('Poste ajouté');
+      loadDevices();
+    } catch (e) { notify(e.message, true); }
+  });
+
+  /* ---------- Demandes ---------- */
+  async function loadRequests() {
+    const body = document.getElementById('requests-body');
+    try {
+      const list = await call('/requests');
+      body.innerHTML = list.length
+        ? list.map(r => `<tr><td>${esc(r.demandeur)}</td><td>${esc(r.modele)}</td><td>${pill(r.etat)}</td></tr>`).join('')
+        : emptyRow(3, 'Aucune demande pour le moment.');
+    } catch (e) {
+      body.innerHTML = emptyRow(3, 'Impossible de charger les demandes.');
+      notify(e.message, true);
+    }
+    loadModelSuggestions();
+  }
+
+  // Suggestions de modèles dans le formulaire (à partir du stock)
+  async function loadModelSuggestions() {
+    try {
+      const stock = await call('/stock');
+      document.getElementById('models').innerHTML =
+        stock.map(s => `<option value="${esc(s.modele)}">`).join('');
+    } catch (e) { /* les suggestions sont facultatives */ }
+  }
+
+  document.getElementById('form-request').addEventListener('submit', async ev => {
+    ev.preventDefault();
+    const f = ev.target.elements;
+    const body = { demandeur: f['demandeur'].value.trim(), modele: f['modele'].value.trim() };
+    try {
+      await call('/requests', { method: 'POST', body: JSON.stringify(body) });
+      ev.target.reset();
+      notify('Demande envoyée');
+      loadRequests();
+    } catch (e) { notify(e.message, true); }
+  });
+
+  /* ---------- Stock (relayé par l'api) ---------- */
+  async function loadStock() {
+    const body = document.getElementById('stock-body');
+    try {
+      const list = await call('/stock');
+      body.innerHTML = list.length
+        ? list.map(s => `<tr><td>${esc(s.modele)}</td><td class="num">${esc(s.quantite)}</td></tr>`).join('')
+        : emptyRow(2, 'Aucun modèle en stock.');
+    } catch (e) {
+      body.innerHTML = emptyRow(2, 'Impossible de charger le stock.');
+      notify(e.message, true);
+    }
+  }
+
+  loadDevices();
+</script>
+</body>
+</html>
