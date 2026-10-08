@@ -1,1 +1,12 @@
+services:
+  api:
+    build: ./api
+    environment:
+      STOCK_URL: http://stock:5001
+    ports:
+      - "5000:5000"
+    depends_on:
+      - stock
 
+  stock:
+    build: ./stock
