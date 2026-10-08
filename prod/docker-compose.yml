@@ -31,6 +31,8 @@ services:
   stock:
     image: luisgp863/repo-luis:stock
     pull_policy: always
+    volumes:
+      - stock_data:/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
       interval: 10s
@@ -38,3 +40,6 @@ services:
       retries: 3
       start_period: 10s
     restart: unless-stopped
+  
+volumes:
+  stock_data:
