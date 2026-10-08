@@ -4,6 +4,8 @@ services:
     pull_policy: always
     ports:
       - "80:80"
+    networks:
+      - frontnet
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:80"]
       interval: 10s
@@ -17,6 +19,9 @@ services:
     image: luisgp863/repo-luis:api
     pull_policy: always
     env_file: .env
+    networks:
+      - frontnet
+      - backnet
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
       interval: 10s
@@ -33,6 +38,8 @@ services:
     pull_policy: always
     volumes:
       - stock_data:/data
+    networks:
+      - backnet
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
       interval: 10s
@@ -41,5 +48,16 @@ services:
       start_period: 10s
     restart: unless-stopped
   
+networks:
+  frontnet:
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+  backnet:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24
 volumes:
   stock_data:
