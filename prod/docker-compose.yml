@@ -1,9 +1,23 @@
 services:
-  front:
-    image: luisgp863/repo-luis:front
+  proxy:
+    image: luisgp863/repo-luis:proxy
     pull_policy: always
     ports:
       - "80:80"
+    networks:
+      - frontnet
+    depends_on:
+      - front
+      - api
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    restart: unless-stopped
+  front:
+    image: luisgp863/repo-luis:front
+    pull_policy: always
     networks:
       - frontnet
     healthcheck:
