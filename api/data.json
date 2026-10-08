@@ -1,0 +1,33 @@
+{
+  "devices": [
+    {
+      "id": 1,
+      "modele": "Latitude 5420",
+      "marque": "Dell",
+      "affectation": "Alice",
+      "statut": "utilise"
+    },
+    {
+      "id": 2,
+      "modele": "ThinkPad T14",
+      "marque": "Lenovo",
+      "affectation": null,
+      "statut": "range"
+    },
+    {
+      "id": 3,
+      "modele": "EliteBook 840",
+      "marque": "HP",
+      "affectation": null,
+      "statut": "range"
+    }
+  ],
+  "requests": [
+    {
+      "id": 1,
+      "demandeur": "Alice",
+      "modele": "Latitude 5420",
+      "etat": "en_attente"
+    }
+  ]
+}
