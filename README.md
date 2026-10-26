@@ -4,25 +4,25 @@ Application web de gestion d'inventaire du parc informatique : postes (modèle, 
 
 Projet Docker & Docker Compose réalisé en groupe de 3.
 
-URL with Duck DNS: http://1nventory.duckdns.org
+URL with Duck DNS: [https://1nventory.duckdns.org](https://1nventory.duckdns.org)
 
 ## Architecture
 
-4 conteneurs, 4 images (multi-stage build), publiées sur un registry privé Docker Hub.
+4 conteneurs, 4 images (multi-stage build), publiées sur un registry privé Docker Hub. Un serveur Caddy, installé sur l'hôte (le droplet DigitalOcean), assure le HTTPS.
 
-| Service | Rôle | Techno | Port interne | Exposé |
-|---|---|---|---|---|
-| `proxy` | Reverse proxy, seul point d'entrée | nginx:1.27-alpine | 80 | oui (80) |
-| `front` | Interface web | nginx:alpine | 80 | non |
-| `api` | Postes, affectations, demandes | Python Flask + gunicorn | 5000 | non |
-| `stock` | Quantités en stock (SQLite persistant) | Python Flask + gunicorn | 5001 | non |
+| Service | Rôle                                   | Techno                  | Port interne | Exposé                       |
+|---------|----------------------------------------|-------------------------|--------------|------------------------------|
+| `proxy` | Reverse proxy interne, point d'entrée  | nginx:1.27-alpine       | 80           | `127.0.0.1:8080` uniquement  |
+| `front` | Interface web                          | nginx:alpine            | 80           | non                          |
+| `api`   | Postes, affectations, demandes         | Python Flask + gunicorn | 5000         | non                          |
+| `stock` | Quantités en stock (SQLite persistant) | Python Flask + gunicorn | 5001         | non                          |
 
 ```
-navigateur → proxy:80 ─┬─ /      → front:80
-                       └─ /api/  → api:5000 → stock:5001
+internet ─ 443 ─▶ Caddy (hôte, HTTPS) ─▶ 127.0.0.1:8080 ─▶ proxy ─┬─ /      → front:80
+                                                                    └─ /api/  → api:5000 → stock:5001
 ```
 
-Seul le `proxy` est accessible depuis l'extérieur. L'`api` appelle `stock` via le réseau interne (`STOCK_URL=http://stock:5001`).
+Aucun conteneur n'est joignable directement depuis Internet : le `proxy` n'écoute que sur `127.0.0.1:8080`, et seul Caddy (ports 80 et 443 de l'hôte) est public. L'`api` appelle `stock` via le réseau interne (`STOCK_URL=http://stock:5001`).
 
 ## Images (registry privé)
 
@@ -54,19 +54,74 @@ docker compose up -d
 docker compose ps
 ```
 
-Ouvrir ensuite http://localhost.
+En local, ouvrir ensuite http://localhost:8080. Sur le serveur, l'application est servie en HTTPS par Caddy (voir plus bas).
 
-Arrêter : `docker compose down` (les données de stock sont conservées).
-Tout réinitialiser, volume compris : `docker compose down -v`.
+Arrêter : `docker compose down` (les données de stock sont conservées). Tout réinitialiser, volume compris : `docker compose down -v`.
 
-## Reverse proxy
+## Déploiement sur DigitalOcean
 
-Un conteneur nginx (`proxy`) est le seul service qui publie un port. Il reçoit toutes les requêtes et les redirige selon l'URL :
+Le script `startup-script.sh` prépare un droplet Ubuntu 24.04 (cloud-init, ou exécution manuelle). Il :
 
-| URL | Destination |
-|---|---|
-| `/api/...` | `http://api:5000/...` (le préfixe `/api` est retiré) |
-| tout le reste | `http://front:80` |
+1. installe Docker et le plugin Compose (dépôt officiel) ;
+2. installe Caddy (dépôt officiel) et écrit `/etc/caddy/Caddyfile` ;
+3. configure le pare-feu `ufw` (ports 22, 80 et 443) ;
+4. clone ce dépôt dans `/opt/1nventaire` et crée `prod/.env` à partir de `.env.example` ;
+5. si un token Docker Hub est fourni, fait le `docker login`, puis `docker compose pull` et `docker compose up -d`.
+
+Utilisation :
+
+- À la création du droplet : *Advanced options* → *Add Initialization scripts*, puis coller le script.
+- Ou, directement sur la machine :
+
+```bash
+chmod +x startup-script.sh
+./startup-script.sh 2>&1 | tee setup.log
+```
+
+Sans token, la dernière étape se fait à la main :
+
+```bash
+cd /opt/1nventaire/prod
+docker login -u luisgp863
+docker compose up -d
+```
+
+Le token Docker Hub (variable `DOCKERHUB_TOKEN`, vide par défaut) n'est jamais écrit dans le dépôt : il doit être en lecture seule et révoqué après usage.
+
+## HTTPS avec Caddy et Let's Encrypt
+
+Caddy tourne directement sur l'hôte et fait office de reverse proxy externe. Il obtient et renouvelle automatiquement le certificat Let's Encrypt du domaine DuckDNS, puis transmet le trafic au conteneur `proxy` :
+
+```
+1nventory.duckdns.org {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+Prérequis :
+
+- le sous-domaine DuckDNS doit pointer vers l'IP publique du droplet (`dig +short 1nventory.duckdns.org`) ;
+- les ports 80 (validation Let's Encrypt et redirection) et 443 doivent être ouverts, dans `ufw` et dans le pare-feu DigitalOcean s'il y en a un.
+
+Vérification :
+
+```bash
+curl -I https://1nventory.duckdns.org
+curl https://1nventory.duckdns.org/api/stock
+systemctl status caddy
+journalctl -u caddy --no-pager | tail -20
+```
+
+Les certificats sont stockés sur l'hôte et survivent à `docker compose down`.
+
+## Reverse proxy interne (nginx)
+
+Un conteneur nginx (`proxy`) est le seul service Docker qui publie un port, et uniquement sur la boucle locale. Il reçoit les requêtes de Caddy et les redirige selon l'URL :
+
+| URL           | Destination                                          |
+|---------------|------------------------------------------------------|
+| `/api/...`    | `http://api:5000/...` (le préfixe `/api` est retiré) |
+| tout le reste | `http://front:80`                                    |
 
 Extrait de `proxy/nginx.conf` :
 
@@ -87,17 +142,19 @@ location / {
 
 La configuration est copiée dans l'image (`proxy/Dockerfile`, basé sur `nginx:1.27-alpine`) : aucun fichier de configuration n'est nécessaire côté production.
 
-Intérêts : un seul point d'entrée, `front` et `api` ne sont plus exposés directement, pas de problème de CORS, et les en-têtes `X-Forwarded-*` transmettent l'origine de la requête.
+Intérêts : un seul point d'entrée pour les conteneurs, `front` et `api` ne sont pas exposés directement, pas de problème de CORS, et les en-têtes `X-Forwarded-*` transmettent l'origine de la requête.
 
 ### Vérifier que le proxy fonctionne
 
+Sur la machine qui exécute le compose :
+
 ```bash
-curl -I localhost/                   # 200 OK (front, via le proxy)
-curl localhost/api/stock             # données de stock (proxy → api → stock)
-docker compose logs proxy --tail 10  # les requêtes apparaissent
-docker port prod-front-1             # aucun port publié
+curl -I localhost:8080/                  # 200 OK (front, via le proxy)
+curl localhost:8080/api/stock            # données de stock (proxy → api → stock)
+docker compose logs proxy --tail 10      # les requêtes apparaissent
+docker port prod-front-1                 # aucun port publié
 docker compose stop proxy
-curl -I localhost/                   # Connection refused
+curl -I localhost:8080/                  # Connection refused
 docker compose start proxy
 ```
 
@@ -105,10 +162,10 @@ docker compose start proxy
 
 Le trafic est séparé en deux réseaux Docker, chacun avec son sous-réseau :
 
-| Réseau | Sous-réseau | Services | Particularité |
-|---|---|---|---|
-| `frontnet` | `172.20.0.0/24` | `proxy`, `front`, `api` | côté web |
-| `backnet` | `172.21.0.0/24` | `api`, `stock` | `internal: true` (aucun accès à internet) |
+| Réseau     | Sous-réseau     | Services                | Particularité                             |
+|------------|-----------------|-------------------------|-------------------------------------------|
+| `frontnet` | `172.20.0.0/24` | `proxy`, `front`, `api` | côté web                                  |
+| `backnet`  | `172.21.0.0/24` | `api`, `stock`          | `internal: true` (aucun accès à internet) |
 
 ```
 frontnet : proxy ── front
@@ -134,18 +191,18 @@ Le fichier `prod/docker-compose.yml` décrit comment les 4 conteneurs sont lanc�
 
 ### Les services
 
-| Service | Image | Particularités |
-|---|---|---|
-| `proxy` | `luisgp863/repo-luis:proxy` | Seul service qui publie un port (`80:80`). Réseau `frontnet`. Dépend de `front` et `api`. |
-| `front` | `luisgp863/repo-luis:front` | Aucun port publié. Réseau `frontnet`. Dépend de `api`. |
-| `api` | `luisgp863/repo-luis:api` | Lit sa configuration dans `.env` (`env_file`). Réseaux `frontnet` et `backnet`. Attend que `stock` soit sain. |
-| `stock` | `luisgp863/repo-luis:stock` | Réseau `backnet` uniquement. Monte le volume `stock_data` sur `/data` pour garder la base SQLite. |
+| Service | Image                       | Particularités                                                                                                |
+|---------|-----------------------------|---------------------------------------------------------------------------------------------------------------|
+| `proxy` | `luisgp863/repo-luis:proxy` | Seul service qui publie un port (`127.0.0.1:8080:80`). Réseau `frontnet`. Dépend de `front` et `api`.         |
+| `front` | `luisgp863/repo-luis:front` | Aucun port publié. Réseau `frontnet`. Dépend de `api`.                                                        |
+| `api`   | `luisgp863/repo-luis:api`   | Lit sa configuration dans `.env` (`env_file`). Réseaux `frontnet` et `backnet`. Attend que `stock` soit sain. |
+| `stock` | `luisgp863/repo-luis:stock` | Réseau `backnet` uniquement. Monte le volume `stock_data` sur `/data` pour garder la base SQLite.             |
 
 ### Les options utilisées
 
 - **`image`** : l'image est téléchargée depuis le registry privé Docker Hub (il faut faire `docker login` avant).
 - **`pull_policy: always`** : à chaque `docker compose up`, Docker vérifie et télécharge la dernière version du tag. On récupère ainsi toujours l'image la plus récente poussée par l'équipe.
-- **`ports: "80:80"`** : le port 80 de la machine est relié au port 80 du conteneur. Seul `proxy` en a un ; `front`, `api` et `stock` ne sont joignables que depuis les réseaux internes Docker.
+- **`ports: "127.0.0.1:8080:80"`** : le port 8080 de la machine, accessible uniquement depuis la machine elle-même (`127.0.0.1`), est relié au port 80 du conteneur `proxy`. Seul `proxy` publie un port ; `front`, `api` et `stock` ne sont joignables que depuis les réseaux internes Docker. Caddy, sur l'hôte, fait le lien avec Internet.
 - **`networks`** : chaque service est rattaché uniquement aux réseaux dont il a besoin (voir la section précédente).
 - **`env_file: .env`** : les variables d'environnement (par exemple `STOCK_URL=http://stock:5001`) sont lues dans le fichier `.env`, qui n'est pas versionné. Un modèle est fourni dans `.env.example`.
 - **`volumes: stock_data:/data`** : le volume nommé `stock_data` (déclaré tout en bas du fichier) survit à la suppression des conteneurs. C'est ce qui rend le stock persistant.
@@ -155,12 +212,12 @@ Le fichier `prod/docker-compose.yml` décrit comment les 4 conteneurs sont lanc�
 
 Chaque service est testé régulièrement pour savoir s'il fonctionne vraiment, et pas seulement s'il est démarré.
 
-| Service | Test | Paramètres |
-|---|---|---|
-| `proxy` | `wget` sur `http://127.0.0.1:80/` | toutes les 10 s, timeout 3 s, 3 essais, `start_period: 10s` |
-| `front` | `wget` sur `http://127.0.0.1:80/` | idem |
-| `api` | requête Python sur `http://localhost:5000/health` | idem |
-| `stock` | requête Python sur `http://localhost:5001/health` | idem |
+| Service | Test                                              | Paramètres                                                  |
+|---------|---------------------------------------------------|-------------------------------------------------------------|
+| `proxy` | `wget` sur `http://127.0.0.1:80`                  | toutes les 10 s, timeout 3 s, 3 essais, `start_period: 10s` |
+| `front` | `wget` sur `http://127.0.0.1:80`                  | toutes les 10 s, timeout 3 s, 3 essais                      |
+| `api`   | requête Python sur `http://localhost:5000/health` | toutes les 10 s, timeout 3 s, 3 essais, `start_period: 10s` |
+| `stock` | requête Python sur `http://localhost:5001/health` | toutes les 10 s, timeout 3 s, 3 essais, `start_period: 10s` |
 
 `start_period: 10s` laisse 10 secondes au service pour démarrer avant que les échecs ne comptent. Après 3 échecs de suite, le conteneur passe en `unhealthy`.
 
@@ -182,37 +239,47 @@ JSON partout. Erreurs au format `{"erreur": "message"}`. Chaque service expose `
 
 **front → api**
 
-| Route | Rôle |
-|---|---|
-| `GET /devices` | liste des postes |
-| `POST /devices` | ajouter un poste |
-| `PUT /devices/<id>` | modifier affectation / statut |
-| `POST /requests` | demande d'équipement |
-| `GET /requests` | liste des demandes |
-| `GET /stock` | quantités (relayées depuis `stock`) |
+| Route               | Rôle                                |
+|---------------------|-------------------------------------|
+| `GET /devices`      | liste des postes                    |
+| `POST /devices`     | ajouter un poste                    |
+| `PUT /devices/<id>` | modifier affectation / statut       |
+| `POST /requests`    | demande d'équipement                |
+| `GET /requests`     | liste des demandes                  |
+| `GET /stock`        | quantités (relayées depuis `stock`) |
 
 **api → stock**
 
-| Route | Rôle |
-|---|---|
-| `GET /stock` | toutes les quantités |
-| `GET /stock/<modele>` | une quantité |
+| Route                 | Rôle                                  |
+|-----------------------|---------------------------------------|
+| `GET /stock`          | toutes les quantités                  |
+| `GET /stock/<modele>` | une quantité                          |
 | `PUT /stock/<modele>` | fixer la quantité (`{"quantite": 4}`) |
 
-Valeurs fixes : `statut` = `utilise` \| `range` ; `etat` = `en_attente` \| `acceptee` \| `refusee`.
+Valeurs fixes : `statut` = `utilise` | `range` ; `etat` = `en_attente` | `acceptee` | `refusee`.
 
 ## Persistance du stock
 
 Le service `stock` enregistre ses données dans une base SQLite (`/data/stock.db`), montée sur le volume Docker `stock_data`. Les quantités survivent donc au redémarrage et à la mise à jour de l'image.
 
+## Sécurité (résumé)
+
+- Segmentation réseau : `backnet` est `internal`, `stock` n'est joignable que par l'`api`.
+- Aucun conteneur exposé directement : le `proxy` n'écoute que sur `127.0.0.1:8080`.
+- HTTPS avec un certificat Let's Encrypt renouvelé automatiquement par Caddy.
+- Pare-feu `ufw` : seuls les ports 22, 80 et 443 sont ouverts.
+- Images multi-stage, tags de base fixés, utilisateur non-root pour les services Python.
+- Aucun secret dans le dépôt : `.env` et les tokens ne sont pas versionnés (`.env.example` sert de modèle).
+
 ## Structure du dépôt
 
 ```
-proxy/    Dockerfile + nginx.conf (reverse proxy)
-front/    Dockerfile + site statique + config nginx
-api/      Dockerfile + API Flask
-stock/    Dockerfile + service de stock
-prod/     docker-compose.yml de production + .env.example
+proxy/               Dockerfile + nginx.conf (reverse proxy interne)
+front/               Dockerfile + site statique + config nginx
+api/                 Dockerfile + API Flask
+stock/               Dockerfile + service de stock
+prod/                docker-compose.yml de production + .env.example
+startup-script.sh    installation d'un droplet (Docker, Caddy, pare-feu, déploiement)
 ```
 
 ## Équipe
