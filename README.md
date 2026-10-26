@@ -161,7 +161,7 @@ ports:
 
 Cette configuration permet à Caddy d'accéder au proxy via `127.0.0.1:8080`, sans exposer directement ce port à Internet.
 
-**Important :** ne conserve pas simultanément `"80:80"` et `"127.0.0.1:8080:80"` dans la liste `ports` du proxy si Caddy doit être le seul service qui écoute sur le port 80 de la machine.
+**Attention** ne pas concerver simultanément `"80:80"` et `"127.0.0.1:8080:80"` dans la liste `ports` du proxy si Caddy doit être le seul service qui écoute sur le port 80 de la machine.
 
 ### Installation et vérification
 
