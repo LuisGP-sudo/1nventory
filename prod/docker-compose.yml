@@ -76,3 +76,5 @@ networks:
         - subnet: 172.21.0.0/24
 volumes:
   stock_data:
+  caddy_data:
+  caddy_config:

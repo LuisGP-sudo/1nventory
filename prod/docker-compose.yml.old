@@ -1,0 +1,78 @@
+services:
+  proxy:
+    image: luisgp863/repo-luis:proxy
+    pull_policy: always
+    ports:
+      - "80:80"
+    networks:
+      - frontnet
+    depends_on:
+      - front
+      - api
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+  front:
+    image: luisgp863/repo-luis:front
+    pull_policy: always
+    networks:
+      - frontnet
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  api:
+    image: luisgp863/repo-luis:api
+    pull_policy: always
+    env_file: .env
+    networks:
+      - frontnet
+      - backnet
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      stock:
+        condition: service_healthy
+    restart: unless-stopped
+
+  stock:
+    image: luisgp863/repo-luis:stock
+    pull_policy: always
+    volumes:
+      - stock_data:/data
+    networks:
+      - backnet
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+  
+networks:
+  frontnet:
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+  backnet:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.21.0.0/24
+volumes:
+  stock_data:
