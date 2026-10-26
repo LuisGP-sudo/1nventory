@@ -101,6 +101,124 @@ curl -I localhost/                   # Connection refused
 docker compose start proxy
 ```
 
+## HTTPS et Caddy (production)
+
+En production sur DigitalOcean, **Caddy** est placé devant le conteneur Nginx `proxy`. Il gère l'accès HTTPS et les certificats TLS, tandis que le proxy Nginx de l'application distribue les requêtes vers le front et l'API.
+
+### Architecture en production
+
+```text
+Navigateur
+    |
+    | HTTPS :443
+    v
+Caddy (hôte Ubuntu)
+    |
+    | HTTP vers 127.0.0.1:8080
+    v
+proxy (Nginx Docker, port interne 80)
+    |----------------------|
+    v                      v
+front:80                api:5000
+                           |
+                           v
+                        stock:5001
+```
+
+Caddy écoute sur les ports 80 et 443 de la machine hôte. Il redirige les requêtes HTTP vers HTTPS et transmet les requêtes HTTPS au proxy Docker.
+
+Le proxy Docker reste responsable du routage applicatif :
+- `/api/...` vers l'API ;
+- les autres chemins vers le front.
+
+### Pourquoi utiliser Caddy ?
+
+- Obtention et renouvellement automatiques des certificats TLS.
+- Accès sécurisé à l'application en HTTPS.
+- Redirection HTTP vers HTTPS.
+- Configuration plus simple que la gestion manuelle des certificats.
+
+### Configuration Caddy
+
+Fichier : `/etc/caddy/Caddyfile`
+
+```caddyfile
+1nventory.duckdns.org {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+Le domaine `1nventory.duckdns.org` doit pointer vers l'adresse IP publique du serveur DigitalOcean.
+
+### Port du proxy Docker
+
+Dans le `docker-compose.yml` de production, le service `proxy` publie son port sur l'interface locale uniquement :
+
+```yaml
+ports:
+  - "127.0.0.1:8080:80"
+```
+
+Cette configuration permet à Caddy d'accéder au proxy via `127.0.0.1:8080`, sans exposer directement ce port à Internet.
+
+**Important :** ne conserve pas simultanément `"80:80"` et `"127.0.0.1:8080:80"` dans la liste `ports` du proxy si Caddy doit être le seul service qui écoute sur le port 80 de la machine.
+
+### Installation et vérification
+
+Sur Ubuntu, après installation de Caddy :
+
+```bash
+systemctl enable --now caddy
+caddy validate --config /etc/caddy/Caddyfile
+systemctl reload caddy
+systemctl status caddy --no-pager
+```
+
+Vérifier les ports d'écoute :
+
+```bash
+ss -lntp | grep -E ':(80|443)\b'
+```
+
+Vérifier les conteneurs et le proxy local :
+
+```bash
+cd /opt/1nventaire/prod
+docker compose ps
+curl -I http://127.0.0.1:8080
+```
+
+Tester l'accès HTTPS :
+
+```bash
+curl -I https://1nventory.duckdns.org
+```
+
+Consulter les journaux en cas de problème :
+
+```bash
+journalctl -u caddy -n 80 --no-pager
+docker compose logs --tail=80 proxy
+```
+
+### Prérequis réseau
+
+- Le DNS DuckDNS doit pointer vers l'IP publique du serveur.
+- Les ports TCP 80 et 443 doivent être autorisés dans le pare-feu DigitalOcean et, si applicable, dans le pare-feu Ubuntu.
+- Le port 8080 ne doit pas être exposé publiquement : il est réservé à la communication locale entre Caddy et Docker.
+
+### Différence entre les deux reverse proxies
+
+| Composant | Responsabilité |
+|---|---|
+| Caddy | Entrée publique, HTTPS, certificats TLS et transmission vers Nginx |
+| `proxy` Nginx | Routage vers `front` et `api` |
+| `front` | Interface web |
+| `api` | Logique métier et accès au service de stock |
+| `stock` | Gestion des quantités et persistance SQLite |
+
+Caddy est installé directement sur le serveur Ubuntu et n'est donc pas un cinquième conteneur Docker dans cette architecture.
+
 ## Réseaux et sous-réseaux
 
 Le trafic est séparé en deux réseaux Docker, chacun avec son sous-réseau :
