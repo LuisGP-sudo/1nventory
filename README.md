@@ -4,6 +4,8 @@ Application web de gestion d'inventaire du parc informatique : postes (modèle, 
 
 Projet Docker & Docker Compose réalisé en groupe de 3.
 
+URL with Duck DNS: http://1nventory.duckdns.org
+
 ## Architecture
 
 4 conteneurs, 4 images (multi-stage build), publiées sur un registry privé Docker Hub.
