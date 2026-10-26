@@ -8,7 +8,7 @@ URL avec Duck DNS: [https://1nventory.duckdns.org](https://1nventory.duckdns.org
 
 ## Architecture
 
-4 conteneurs, 4 images (multi-stage build) publiées sur un registry privé Docker Hub. Caddy, installé sur le serveur, assure le HTTPS.
+4 images (multi-stage build) publiées sur un registry privé Docker Hub. Caddy, installé sur le serveur, assure le HTTPS.
 
 | Service | Rôle                                   | Techno                  | Port | Exposé                      |
 |---------|----------------------------------------|-------------------------|------|-----------------------------|
