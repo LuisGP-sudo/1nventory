@@ -2,23 +2,40 @@
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
-# --- Optional: read-only Docker Hub token. Empty = log in and start the app manually ---
-DOCKERHUB_USER="luisgp863"
-DOCKERHUB_TOKEN=""
-
-REPO="https://github.com/LuisGP-sudo/1nventaire.git"
+# --- Settings ---
+DOMAIN="1nventory.duckdns.org"
+REPO="https://github.com/LuisGP-sudo/1nventory.git"
 REPO_DIR="/opt/1nventaire"
 APP_DIR="$REPO_DIR/prod"
 
+# Optional read-only Docker Hub token.
+DOCKERHUB_USER="luisgp863"
+DOCKERHUB_TOKEN=""
+
 # --- Base packages ---
 apt-get update
-apt-get install -y ca-certificates curl git ufw
+apt-get install -y ca-certificates curl git ufw gnupg debian-keyring debian-archive-keyring apt-transport-https
 
 # --- Docker + compose plugin (official repo) ---
 curl -fsSL https://get.docker.com | sh
 systemctl enable --now docker
 
-# --- Firewall: SSH, HTTP and HTTPS (443 already open for Caddy later) ---
+# --- Caddy on the host (official repo): HTTPS + Let's Encrypt ---
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+chmod o+r /usr/share/keyrings/caddy-stable-archive-keyring.gpg /etc/apt/sources.list.d/caddy-stable.list
+apt-get update
+apt-get install -y caddy
+
+cat > /etc/caddy/Caddyfile << EOF
+${DOMAIN} {
+    reverse_proxy 127.0.0.1:8080
+}
+EOF
+systemctl enable caddy
+systemctl restart caddy
+
+# --- Firewall: SSH, HTTP (Let's Encrypt validation) and HTTPS ---
 ufw allow OpenSSH
 ufw allow 80/tcp
 ufw allow 443/tcp
