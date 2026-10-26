@@ -24,7 +24,7 @@ internet → Caddy (HTTPS) → 127.0.0.1:8080 → proxy ─┬─ /      → fro
 
 Images : `luisgp863/repo-luis:proxy`, `:front`, `:api`, `:stock`.
 
-## Lancer l'application
+## Lancer l'application en local
 
 ```bash
 cd prod
@@ -37,7 +37,7 @@ docker compose ps
 
 En local : http://localhost:8080. Arrêter : `docker compose down` (le stock est conservé).
 
-## Déploiement sur DigitalOcean
+## Déploiement sur une instance
 
 Le script `startup-script.sh` prépare un droplet Ubuntu : il installe Docker et Caddy, ouvre les ports 22, 80 et 443 (`ufw`), clone ce dépôt dans `/opt/1nventaire` et crée le `.env`.
 
